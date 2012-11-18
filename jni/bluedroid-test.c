@@ -21,6 +21,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <signal.h>
 
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -32,10 +33,13 @@ static const btsock_interface_t *sBtSocketInterface = NULL;
 
 #define FALSE 0
 #define TRUE 1
+typedef unsigned short boolean;
 
 #define CASE_RETURN_STR(const) case const: return #const;
 
-// taken from external/bluedroid/btif/src/btif_util.c
+//
+// taken from external/bluedroi/btif/src/btif_util.c
+// -------------------------------------------------
 const char* dump_property_type(bt_property_type_t type)
 {
     switch(type)
@@ -56,15 +60,58 @@ const char* dump_property_type(bt_property_type_t type)
     }
 }
 
+//
+// taken from external/bluedroi/btif/src/btif_util.c
+// -------------------------------------------------
+char *bd2str(bt_bdaddr_t *bdaddr, char *bdstr)
+{
+    char *addr = (char *) bdaddr->address;
 
-
-static void adapter_state_change_callback(bt_state_t status) {
-    DEBUG("%s: Status is %d\n", __FUNCTION__, status);
+    sprintf(bdstr, "%02x:%02x:%02x:%02x:%02x:%02x",
+                       (int)addr[0],(int)addr[1],(int)addr[2],
+                       (int)addr[3],(int)addr[4],(int)addr[5]);
+    return bdstr;
 }
+
+//
+// taken from external/bluedroi/btif/src/btif_util.c
+// -------------------------------------------------
+void uuid_to_string(bt_uuid_t *p_uuid, char *str)
+{
+    uint32_t uuid0, uuid4;
+    uint16_t uuid1, uuid2, uuid3, uuid5;
+
+    memcpy(&uuid0, &(p_uuid->uu[0]), 4);
+    memcpy(&uuid1, &(p_uuid->uu[4]), 2);
+    memcpy(&uuid2, &(p_uuid->uu[6]), 2);
+    memcpy(&uuid3, &(p_uuid->uu[8]), 2);
+    memcpy(&uuid4, &(p_uuid->uu[10]), 4);
+    memcpy(&uuid5, &(p_uuid->uu[14]), 2);
+
+    sprintf((char *)str, "%.8x-%.4x-%.4x-%.4x-%.8x%.4x",
+            ntohl(uuid0), ntohs(uuid1),
+            ntohs(uuid2), ntohs(uuid3),
+            ntohl(uuid4), ntohs(uuid5));
+    return;
+}
+
 
 const void debug_bt_property_t(bt_property_t prop) {
     bt_property_type_t ptype = prop.type;
-    DEBUG("%s: \n", dump_property_type(ptype));
+    DEBUG("%s: ", dump_property_type(ptype));
+
+    switch(prop.type){
+    case BT_PROPERTY_BDNAME:
+        DEBUG("%s", prop.val);
+        break;
+    case BT_PROPERTY_BDADDR:
+        bt_addr_t addr;
+        char text[18];
+        memcpy(&addr, prop.value, prop.size);
+        DEBUG("%s", bd2str(&addr, text));
+        break;
+    }
+    DEBUG("\n");
 }
 
 
@@ -74,6 +121,9 @@ const void debug_bt_property_t(bt_property_t prop) {
 #define DEBUG_STATUS()                          \
     DEBUG("%s: Status is: %d\n", __FUNCTION__)
 
+static void adapter_state_change_callback(bt_state_t status) {
+    DEBUG("%s: Status is %d\n", __FUNCTION__, status);
+}
 
 void adapter_state_change_cb(bt_state_t status) {
     DEBUG_STATUS();
@@ -173,11 +223,15 @@ void ssp_request_cb(bt_bdaddr_t *bd_addr, bt_bdname_t *bdname, uint32_t cod,
     return;
 }
 
+boolean running = FALSE;
+
 void thread_event_cb(bt_cb_thread_evt event) {
     if (event  == ASSOCIATE_JVM) {
         DEBUG("%s: ASSOCIATE\n", __FUNCTION__);
+
     } else if (event == DISASSOCIATE_JVM) {
         DEBUG("%s: DISASSOCIATE\n", __FUNCTION__);
+        running = FALSE;
     }
 }
 
@@ -196,7 +250,7 @@ bt_callbacks_t sBtCallbacks = {
     thread_event_cb,
 };
 
-unsigned short init() {
+boolean init() {
     if (sBtInterface != NULL) {
         DEBUG("double init call\n");
         return FALSE;
@@ -245,7 +299,49 @@ unsigned short init() {
     return TRUE;
 }
 
+void event_thread() {
+    DEBUG("events thread starting\n");
+    while (running){
+        sleep(2);
+    }
 
-void main() {
-    init();
+    DEBUG("events thread stopping\n");
+}
+
+pthread_t thread;
+boolean start_event_thread() {
+    int ret;
+    running = TRUE;
+
+    ret = pthread_create(&thread, NULL, event_thread, NULL);
+    return ret == 0;
+}
+
+void signal_handler(int dummy) {
+    running = FALSE;
+}
+
+int main(int argc, char** argv) {
+    running = TRUE;
+    if (start_event_thread() == FALSE) {
+        running = FALSE;
+        return -2;
+    }
+
+    if (init() == FALSE) {
+        running = FALSE;
+        return -1;
+    }
+
+    signal(SIGINT, signal_handler);
+    signal(SIGKILL, signal_handler);
+
+    sBtInterface->enable();
+
+    sBtInterface->start_discovery();
+
+    pthread_join(thread, NULL);
+
+    sBtInterface->disable();
+    return 0;
 }
