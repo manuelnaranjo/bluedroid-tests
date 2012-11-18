@@ -60,6 +60,19 @@ const char* dump_property_type(bt_property_type_t type)
     }
 }
 
+const char* dump_device_type(bt_device_type_t type)
+{
+    switch (type)
+    {
+        CASE_RETURN_STR(BT_DEVICE_DEVTYPE_BREDR)
+        CASE_RETURN_STR(BT_DEVICE_DEVTYPE_BLE)
+        CASE_RETURN_STR(BT_DEVICE_DEVTYPE_DUAL)
+
+        default:
+            return "UNKNOWN DEVICE TYPE";
+    }
+}
+
 //
 // taken from external/bluedroi/btif/src/btif_util.c
 // -------------------------------------------------
@@ -98,17 +111,24 @@ void uuid_to_string(bt_uuid_t *p_uuid, char *str)
 
 const void debug_bt_property_t(bt_property_t prop) {
     bt_property_type_t ptype = prop.type;
+    bt_device_type_t dtype;
     DEBUG("%s: ", dump_property_type(ptype));
+
+    bt_addr_t addr;
+    char text[2000];
 
     switch(prop.type){
     case BT_PROPERTY_BDNAME:
-        DEBUG("%s", prop.val);
+        memcpy(&text, prop.val, prop.len);
+        DEBUG("%s", text);
         break;
     case BT_PROPERTY_BDADDR:
-        bt_addr_t addr;
-        char text[18];
-        memcpy(&addr, prop.value, prop.size);
+        memcpy(&addr, prop.val, prop.len);
         DEBUG("%s", bd2str(&addr, text));
+        break;
+    case BT_PROPERTY_TYPE_OF_DEVICE:
+        memcpy(&dtype, prop.val, prop.len);
+        DEBUG("%s", dump_device_type(dtype));
         break;
     }
     DEBUG("\n");
