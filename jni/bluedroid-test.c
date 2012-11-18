@@ -114,8 +114,9 @@ const void debug_bt_property_t(bt_property_t prop) {
     bt_device_type_t dtype;
     DEBUG("%s: ", dump_property_type(ptype));
 
-    bt_addr_t addr;
+    bt_bdaddr_t addr;
     char text[2000];
+    memset(text, 0, sizeof(char)*2000);
 
     switch(prop.type){
     case BT_PROPERTY_BDNAME:
@@ -130,7 +131,11 @@ const void debug_bt_property_t(bt_property_t prop) {
         memcpy(&dtype, prop.val, prop.len);
         DEBUG("%s", dump_device_type(dtype));
         break;
+    case BT_PROPERTY_ADAPTER_SCAN_MODE:
+    case BT_PROPERTY_ADAPTER_DISCOVERY_TIMEOUT:
+        DEBUG("%i", (int)prop.val));
     }
+
     DEBUG("\n");
 }
 
