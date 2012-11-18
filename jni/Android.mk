@@ -5,10 +5,6 @@ LOCAL_SRC_FILES := \
 	bluedroid-test.c
 
 LOCAL_SHARED_LIBRARIES := \
-	libandroid_runtime \
-	libnativehelper \
-	libcutils \
-	libutils \
 	libhardware
 
 LOCAL_MODULE := bluedroid-test

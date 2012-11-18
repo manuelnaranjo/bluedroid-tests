@@ -15,16 +15,12 @@
  */
 
 #define LOG_TAG "bluedroid-test"
-#include "btif_util.h"
 #include "hardware/bluetooth.h"
 #include "hardware/bt_sock.h"
-#include "utils/Log.h"
-#include "utils/misc.h"
-#include "cutils/properties.h"
-#include "android_runtime/AndroidRuntime.h"
 
 #include <string.h>
 #include <pthread.h>
+#include <stdio.h>
 
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -37,11 +33,36 @@ static const btsock_interface_t *sBtSocketInterface = NULL;
 #define FALSE 0
 #define TRUE 1
 
+#define CASE_RETURN_STR(const) case const: return #const;
+
+// taken from external/bluedroid/btif/src/btif_util.c
+const char* dump_property_type(bt_property_type_t type)
+{
+    switch(type)
+    {
+        CASE_RETURN_STR(BT_PROPERTY_BDNAME)
+        CASE_RETURN_STR(BT_PROPERTY_BDADDR)
+        CASE_RETURN_STR(BT_PROPERTY_UUIDS)
+        CASE_RETURN_STR(BT_PROPERTY_CLASS_OF_DEVICE)
+        CASE_RETURN_STR(BT_PROPERTY_TYPE_OF_DEVICE)
+        CASE_RETURN_STR(BT_PROPERTY_REMOTE_RSSI)
+        CASE_RETURN_STR(BT_PROPERTY_ADAPTER_DISCOVERY_TIMEOUT)
+        CASE_RETURN_STR(BT_PROPERTY_ADAPTER_BONDED_DEVICES)
+        CASE_RETURN_STR(BT_PROPERTY_ADAPTER_SCAN_MODE)
+        CASE_RETURN_STR(BT_PROPERTY_REMOTE_FRIENDLY_NAME)
+
+        default:
+            return "UNKNOWN PROPERTY ID";
+    }
+}
+
+
+
 static void adapter_state_change_callback(bt_state_t status) {
     DEBUG("%s: Status is %d\n", __FUNCTION__, status);
 }
 
-const char * debug_bt_property_t(bt_property_t prop) {
+const void debug_bt_property_t(bt_property_t prop) {
     bt_property_type_t ptype = prop.type;
     DEBUG("%s: \n", dump_property_type(ptype));
 }
@@ -53,28 +74,37 @@ const char * debug_bt_property_t(bt_property_t prop) {
 #define DEBUG_STATUS()                          \
     DEBUG("%s: Status is: %d\n", __FUNCTION__)
 
-static void adapter_properties_callback(bt_status_t status, int num_properties,
-                                            bt_property_t *properties) {
+
+void adapter_state_change_cb(bt_state_t status) {
+    DEBUG_STATUS();
+}
+
+
+void adapter_properties_cb(bt_status_t status,
+                           int num_properties,
+                           bt_property_t *properties) {
     DEBUG_STATUS_PROP();
+    int i;
 
     if (status != BT_STATUS_SUCCESS) {
         return;
     }
 
-    for (int i = 0; i < num_properties; i++) {
+    for (i = 0; i < num_properties; i++) {
         debug_bt_property_t(properties[i]);
     }
 
 }
 
-static void remote_device_properties_callback(bt_status_t status, bt_bdaddr_t *bd_addr,
+void remote_device_properties_cb(bt_status_t status, bt_bdaddr_t *bd_addr,
                                               int num_properties, bt_property_t *properties) {
+    int i;
     DEBUG_STATUS_PROP();
     if (status != BT_STATUS_SUCCESS) {
         return;
     }
 
-    for (int i = 0; i < num_properties; i++) {
+    for (i = 0; i < num_properties; i++) {
         debug_bt_property_t(properties[i]);
     }
 
@@ -82,11 +112,12 @@ static void remote_device_properties_callback(bt_status_t status, bt_bdaddr_t *b
 }
 
 
-static void device_found_callback(int num_properties, bt_property_t *properties) {
+void device_found_cb(int num_properties, bt_property_t *properties) {
     int addr_index = -1;
-    DEBUG_STATUS_PROP();
+    int i;
+    DEBUG("%s: Properties: %i\n", __FUNCTION__, num_properties);
 
-    for (int i = 0; i < num_properties; i++) {
+    for (i = 0; i < num_properties; i++) {
         if (properties[i].type == BT_PROPERTY_BDADDR) {
             addr_index = i;
         }
@@ -98,51 +129,51 @@ static void device_found_callback(int num_properties, bt_property_t *properties)
         return;
     }
 
-    remote_device_properties_callback(BT_STATUS_SUCCESS,
+    remote_device_properties_cb(BT_STATUS_SUCCESS,
                                       (bt_bdaddr_t *)properties[addr_index].val,
                                       num_properties, properties);
 
 }
 
-static void bond_state_changed_callback(bt_status_t status, bt_bdaddr_t *bd_addr,
+void bond_state_changed_cb(bt_status_t status, bt_bdaddr_t *bd_addr,
                                         bt_bond_state_t state) {
     DEBUG_STATUS();
     if (!bd_addr){
-        DEBUG("Address is null in %s", __FUNCTION__);
+        DEBUG("Address is null in %s\n", __FUNCTION__);
         return;
     }
 }
 
-static void acl_state_changed_callback(bt_status_t status, bt_bdaddr_t *bd_addr,
+void acl_state_changed_cb(bt_status_t status, bt_bdaddr_t *bd_addr,
                                        bt_acl_state_t state)
 {
     DEBUG_STATUS();
     if (!bd_addr) {
-        DEBUG("Address is null in %s", __FUNCTION__);
+        DEBUG("Address is null in %s\n", __FUNCTION__);
         return;
     }
 }
 
-static void discovery_state_changed_callback(bt_discovery_state_t state) {
-    DEBUG("%s: DiscoveryState:%d ", __FUNCTION__, state);
+void discovery_state_changed_cb(bt_discovery_state_t state) {
+    DEBUG("%s: DiscoveryState: %d \n", __FUNCTION__, state);
 }
 
-static void pin_request_callback(bt_bdaddr_t *bd_addr, bt_bdname_t *bdname, uint32_t cod) {
+void pin_request_cb(bt_bdaddr_t *bd_addr, bt_bdname_t *bdname, uint32_t cod) {
     DEBUG("%s\n", __FUNCTION__);
     if (!bd_addr) {
-        DEBUG("Address is null in %s", __FUNCTION__);
+        DEBUG("Address is null in %s\n", __FUNCTION__);
         return;
     }
     return;
 }
 
-static void ssp_request_callback(bt_bdaddr_t *bd_addr, bt_bdname_t *bdname, uint32_t cod,
+void ssp_request_cb(bt_bdaddr_t *bd_addr, bt_bdname_t *bdname, uint32_t cod,
                                  bt_ssp_variant_t pairing_variant, uint32_t pass_key) {
     DEBUG("%s\n", __FUNCTION__);
     return;
 }
 
-static void callback_thread_event(bt_cb_thread_evt event) {
+void thread_event_cb(bt_cb_thread_evt event) {
     if (event  == ASSOCIATE_JVM) {
         DEBUG("%s: ASSOCIATE\n", __FUNCTION__);
     } else if (event == DISASSOCIATE_JVM) {
@@ -153,19 +184,19 @@ static void callback_thread_event(bt_cb_thread_evt event) {
 
 bt_callbacks_t sBtCallbacks = {
     sizeof(sBtCallbacks),
-    adapter_state_change_callback,
-    adapter_properties_callback,
-    remote_device_properties_callback,
-    device_found_callback,
-    discovery_state_changed_callback,
-    pin_request_callback,
-    ssp_request_callback,
-    bond_state_changed_callback,
-    acl_state_changed_callback,
-    callback_thread_event,
+    adapter_state_change_cb,
+    adapter_properties_cb,
+    remote_device_properties_cb,
+    device_found_cb,
+    discovery_state_changed_cb,
+    pin_request_cb,
+    ssp_request_cb,
+    bond_state_changed_cb,
+    acl_state_changed_cb,
+    thread_event_cb,
 };
 
-static bool init() {
+unsigned short init() {
     if (sBtInterface != NULL) {
         DEBUG("double init call\n");
         return FALSE;
@@ -178,7 +209,7 @@ static bool init() {
     err = hw_get_module( BT_STACK_MODULE_ID, (hw_module_t const**)&module);
 
     if (err != 0) {
-        DEBUG("hw_get_module failed with %i", err);
+        DEBUG("hw_get_module failed with %i\n", err);
         return FALSE;
     }
 
@@ -186,13 +217,13 @@ static bool init() {
     err = module->methods->open(module, BT_STACK_MODULE_ID, &abstraction);
 
     if (err != 0) {
-        DEBUG("hw_module_t->open failed with %i", err);
+        DEBUG("hw_module_t->open failed with %i\n", err);
         return FALSE;
     }
 
     bluetooth_module_t* btStack = (bluetooth_module_t *)abstraction;
     sBtInterface = btStack->get_bluetooth_interface();
-    DEBUG("library opened");
+    DEBUG("library opened!\n");
 
     int ret = sBtInterface->init(&sBtCallbacks);
 
@@ -206,8 +237,10 @@ static bool init() {
         sBtInterface->get_profile_interface(BT_PROFILE_SOCKETS_ID);
 
     if (sBtSocketInterface == NULL) {
-        DEBUG("Failed getting socket interface");
+        DEBUG("Failed getting socket interface\n");
     }
+
+    DEBUG("Everything is up!\n");
 
     return TRUE;
 }
