@@ -194,7 +194,22 @@ static bool init() {
     sBtInterface = btStack->get_bluetooth_interface();
     DEBUG("library opened");
 
-    //int ret =
+    int ret = sBtInterface->init(&sBtCallbacks);
+
+    if (ret != BT_STATUS_SUCCESS){
+        DEBUG("Error while setting the callbacks %i\n", ret);
+        sBtInterface = NULL; // Google does it this way, I think it's a leak!
+        return FALSE;
+    }
+
+    sBtSocketInterface = (btsock_interface_t *)
+        sBtInterface->get_profile_interface(BT_PROFILE_SOCKETS_ID);
+
+    if (sBtSocketInterface == NULL) {
+        DEBUG("Failed getting socket interface");
+    }
+
+    return TRUE;
 }
 
 
